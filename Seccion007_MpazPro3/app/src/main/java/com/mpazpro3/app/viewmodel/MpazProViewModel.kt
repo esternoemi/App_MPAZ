@@ -17,6 +17,7 @@ import com.mpazpro3.app.model.Usuario
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import com.mpazpro3.app.model.EstadoAvance
 
 /**
  * ViewModel único, compartido por todas las pantallas (se crea una sola vez en AppNavigation).
@@ -215,19 +216,74 @@ class MpazProViewModel : ViewModel() {
     }
 
     /**
-     * TODO(equipo): devolver los desafíos del contenido (sin la evaluación final), ordenados
+     * Devolver los desafíos del contenido (sin la evaluación final), ordenados
      * por dificultad progresiva. Hoy devuelve TODAS las actividades, sin filtrar ni ordenar.
      */
-    fun desafiosDe(contenidoId: String?): List<Actividad> = _actividades.value
+    fun desafiosDe(contenidoId: String?): List<Actividad> =
+        _actividades.value.filter { it.contenidoId == contenidoId && !it.esEvaluacionFinal }.sortedBy { it.orden }
 
     /**
-     * TODO(equipo): registrar la respuesta en el seguimiento del estudiante y devolver si fue
+     * Registrar la respuesta en el seguimiento del estudiante y devolver si fue
      * correcta (true/false) para mostrar la retroalimentación. Hoy devuelve null.
      */
-    fun responderDesafio(estudianteId: String, actividad: Actividad, alternativa: Int): Boolean? = null
+    fun responderDesafio(
+        estudianteId: String,
+        actividad: Actividad,
+        alternativa: Int
+    ): Boolean? {
+        val actividadValida = _actividades.value.firstOrNull {
+            it.id == actividad.id &&
+                    it.contenidoId == actividad.contenidoId &&
+                    !it.esEvaluacionFinal
+        }
 
-    /** TODO(equipo): devolver solo las preguntas de la evaluación final del contenido. Hoy devuelve todas. */
-    fun evaluacionFinalDe(contenidoId: String?): List<Actividad> = _actividades.value
+        if (actividadValida == null) {
+            return null
+        }
+
+        if (
+            estudianteId.isBlank() ||
+            alternativa < 0 ||
+            alternativa >= actividadValida.alternativas.size
+        ) {
+            return null
+        }
+        val alternativaSeleccionada = actividadValida.alternativas[alternativa]
+
+        val respuesta = RespuestaEstudiante(
+            actividadId = actividadValida.id,
+            alternativaElegida = alternativa,
+            esCorrecta = alternativaSeleccionada.esCorrecta,
+            numeroIntento = 0
+        )
+
+        val seguimiento = _seguimientos.value.firstOrNull {
+            it.estudianteId == estudianteId &&
+                    it.contenidoId == actividadValida.contenidoId
+        }
+
+        val respuestasExistentes = if (seguimiento == null) {
+            emptyList()
+        } else {
+            seguimiento.respuestas
+        }
+        val respuestasActualizadas = respuestasExistentes
+            .filterNot {it.actividadId == actividadValida.id && it.numeroIntento == 0 } + respuesta
+
+        guardarSeguimiento(estudianteId = estudianteId,contenidoId = actividadValida.contenidoId,respuestas = respuestasActualizadas,intentosEvaluacionUsados = if (seguimiento == null) {
+                0
+            } else {
+                seguimiento.intentosEvaluacionUsados
+            }
+        )
+
+        return respuesta.esCorrecta
+    }
+
+
+    /** Devolver solo las preguntas de la evaluación final del contenido. Hoy devuelve todas. */
+    fun evaluacionFinalDe(contenidoId: String?): List<Actividad> =
+        _actividades.value.filter { it.contenidoId == contenidoId && it.esEvaluacionFinal }.sortedBy { it.orden }
 
     /**
      * TODO(equipo): intentos que le quedan al estudiante en la evaluación final (máximo definido
@@ -237,18 +293,135 @@ class MpazProViewModel : ViewModel() {
     fun intentosRestantes(estudianteId: String, contenidoId: String): Int? = null
 
     /**
-     * TODO(equipo): registrar las respuestas de la evaluación final como un nuevo intento
+     * Registrar las respuestas de la evaluación final como un nuevo intento
      * (solo si quedan intentos) y actualizar el seguimiento. Hoy no hace nada.
      * @param respuestas mapa idActividad -> índice de la alternativa elegida.
      */
-    fun enviarEvaluacion(estudianteId: String, contenidoId: String, respuestas: Map<String, Int>) {
-        // Sin implementar todavía.
+    fun enviarEvaluacion(estudianteId: String,contenidoId: String,respuestas: Map<String, Int>): Boolean {
+        if (estudianteId.isBlank() || contenidoId.isBlank()) return false
+
+        val preguntas = evaluacionFinalDe(contenidoId)
+        val idsEsperados = preguntas.map { it.id }.toSet()
+
+        if (preguntas.isEmpty() || respuestas.keys != idsEsperados) {
+            return false
+        }
+
+        val seguimiento = _seguimientos.value.firstOrNull {
+            it.estudianteId == estudianteId && it.contenidoId == contenidoId
+        }
+        val intentosAnteriores = if (seguimiento == null) {
+            0
+        } else {
+            seguimiento.intentosEvaluacionUsados
+        }
+        val numeroIntento = intentosAnteriores + 1
+
+        val respuestasNuevas = mutableListOf<RespuestaEstudiante>()
+        for (pregunta in preguntas) {
+            val alternativaElegida = respuestas[pregunta.id]
+
+
+
+
+            if (alternativaElegida == null) {
+                return false
+            }
+
+            if (
+                alternativaElegida < 0 ||
+                alternativaElegida >= pregunta.alternativas.size
+            ) {
+                return false
+            }
+
+            val alternativaSeleccionada = pregunta.alternativas[alternativaElegida]
+            respuestasNuevas.add(
+                RespuestaEstudiante(
+                    actividadId = pregunta.id,
+                    alternativaElegida = alternativaElegida,
+                    esCorrecta = alternativaSeleccionada.esCorrecta,
+                    numeroIntento = numeroIntento
+                )
+            )
+        }
+
+        val respuestasExistentes = if (seguimiento == null) {
+            emptyList()
+        } else {
+            seguimiento.respuestas
+        }
+        guardarSeguimiento(
+            estudianteId = estudianteId,
+            contenidoId = contenidoId,
+            respuestas = respuestasExistentes + respuestasNuevas,
+            intentosEvaluacionUsados = numeroIntento
+        )
+
+        return true
     }
 
+
     /**
-     * TODO(equipo): devolver las respuestas del estudiante en el contenido, para que revise
+     * Devolver las respuestas del estudiante en el contenido, para que revise
      * cuáles fueron correctas e incorrectas. RF: "revisar cuáles de sus respuestas fueron
      * correctas o incorrectas". Hoy devuelve una lista vacía.
      */
-    fun respuestasDe(estudianteId: String, contenidoId: String): List<RespuestaEstudiante> = emptyList()
+    fun respuestasDe(estudianteId: String,contenidoId: String): List<RespuestaEstudiante> {
+        val ordenPorActividad = mutableMapOf<String, Int>()
+        for (actividad in _actividades.value) {
+            ordenPorActividad[actividad.id] = actividad.orden
+        }
+
+        return _seguimientos.value
+            .filter {
+                it.estudianteId == estudianteId &&
+                        it.contenidoId == contenidoId
+            }
+            .flatMap { it.respuestas }
+            .sortedWith(
+                compareBy<RespuestaEstudiante> { it.numeroIntento }
+                    .thenBy { ordenPorActividad.getOrDefault(it.actividadId, Int.MAX_VALUE) }
+                    .thenBy { it.actividadId }
+            )
+    }
+
+
+
+    private fun guardarSeguimiento( estudianteId: String,contenidoId: String,respuestas: List<RespuestaEstudiante>,intentosEvaluacionUsados: Int) {
+        val seguimientoExistente = _seguimientos.value.firstOrNull {
+            it.estudianteId == estudianteId && it.contenidoId == contenidoId
+        }
+
+        val seguimientoActualizado = if (seguimientoExistente == null) {
+            SeguimientoAvance(
+                estudianteId = estudianteId,
+                contenidoId = contenidoId,
+                respuestas = respuestas,
+                intentosEvaluacionUsados = intentosEvaluacionUsados,
+                estado = EstadoAvance.EN_PROGRESO
+            )
+        } else {
+            seguimientoExistente.copy(
+                respuestas = respuestas,
+                intentosEvaluacionUsados = intentosEvaluacionUsados,
+                estado = EstadoAvance.EN_PROGRESO
+            )
+        }
+
+        _seguimientos.value = if (seguimientoExistente == null) {
+            _seguimientos.value + seguimientoActualizado
+        } else {
+            _seguimientos.value.map { seguimiento ->
+                if (
+                    seguimiento.estudianteId == estudianteId &&
+                    seguimiento.contenidoId == contenidoId
+                ) {
+                    seguimientoActualizado
+                } else {
+                    seguimiento
+                }
+            }
+        }
+    }
 }
