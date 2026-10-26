@@ -28,8 +28,10 @@ class MpazProViewModelReqFuncional10Test {
     fun respuestasDeEvaluacionSeGuardanConCorreccionYNumeroDeIntento() {
         val viewModel = MpazProViewModel()
         val preguntas = viewModel.evaluacionFinalDe("C2")
+        val desafio = viewModel.desafiosDe("C2").first { it.id == "A1" }
 
         assertEquals(listOf("E1", "E2"), preguntas.map { it.id })
+        assertEquals(false, viewModel.responderDesafio("EST-001", desafio, 1))
 
         val respuestasPrimerIntento = mutableMapOf<String, Int>()
         respuestasPrimerIntento["E1"] = 0
@@ -54,10 +56,10 @@ class MpazProViewModelReqFuncional10Test {
         )
 
         val respuestas = viewModel.respuestasDe("EST-001", "C2")
-            .filter { it.numeroIntento > 0 }
 
-        assertEquals(listOf(1, 1, 2, 2), respuestas.map { it.numeroIntento })
-        assertEquals(listOf(true, false, false, true), respuestas.map { it.esCorrecta })
+        assertEquals(listOf("A1", "E1", "E2"), respuestas.map { it.actividadId })
+        assertEquals(listOf(0, 2, 2), respuestas.map { it.numeroIntento })
+        assertEquals(listOf(false, false, true), respuestas.map { it.esCorrecta })
     }
 
     @Test
