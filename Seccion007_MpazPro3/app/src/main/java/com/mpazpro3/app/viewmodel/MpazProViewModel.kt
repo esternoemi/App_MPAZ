@@ -373,12 +373,19 @@ class MpazProViewModel : ViewModel() {
             ordenPorActividad[actividad.id] = actividad.orden
         }
 
-        return _seguimientos.value
+        val respuestas = _seguimientos.value
             .filter {
                 it.estudianteId == estudianteId &&
                         it.contenidoId == contenidoId
             }
             .flatMap { it.respuestas }
+
+        val ultimoIntento = respuestas
+            .filter { it.numeroIntento > 0 }
+            .maxOfOrNull { it.numeroIntento }
+
+        return respuestas
+            .filter { it.numeroIntento == 0 || it.numeroIntento == ultimoIntento }
             .sortedWith(
                 compareBy<RespuestaEstudiante> { it.numeroIntento }
                     .thenBy { ordenPorActividad.getOrDefault(it.actividadId, Int.MAX_VALUE) }
