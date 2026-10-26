@@ -22,7 +22,7 @@ import androidx.navigation.NavHostController
 import com.mpazpro3.app.navigation.Rutas
 import com.mpazpro3.app.ui.components.BarraSuperior
 import com.mpazpro3.app.viewmodel.MpazProViewModel
-
+import androidx.compose.runtime.remember 
 /**
  * Revisión de respuestas: el estudiante ve cuáles de sus respuestas fueron correctas o
  * incorrectas. RF: "revisar cuáles de sus respuestas fueron correctas o incorrectas".
@@ -32,11 +32,15 @@ import com.mpazpro3.app.viewmodel.MpazProViewModel
  *
  * TODO(equipo): respuestasDe() hoy devuelve una lista vacía.
  */
+
 @Composable
 fun RevisionRespuestasScreen(navController: NavHostController, viewModel: MpazProViewModel) {
     val contenidoId by viewModel.contenidoSeleccionadoId.collectAsState()
     val usuario by viewModel.usuarioActivo.collectAsState()
-    val respuestas = viewModel.respuestasDe(usuario?.id.orEmpty(), contenidoId.orEmpty())
+    val seguimientos by viewModel.seguimientos.collectAsState()
+    val respuestas = remember(seguimientos, usuario?.id, contenidoId) {
+        viewModel.respuestasDe(usuario?.id.orEmpty(), contenidoId.orEmpty())
+    }
 
     Scaffold(topBar = { BarraSuperior("Mis respuestas", navController) }) { padding ->
         Column(
@@ -48,7 +52,7 @@ fun RevisionRespuestasScreen(navController: NavHostController, viewModel: MpazPr
         ) {
             if (respuestas.isEmpty()) {
                 Text(
-                    "Todavía no hay respuestas para revisar (respuestasDe() está pendiente de implementar).",
+                    "Todavía no has respondido actividades de este contenido para revisar.",
                     style = MaterialTheme.typography.bodyLarge
                 )
             }
@@ -59,15 +63,39 @@ fun RevisionRespuestasScreen(navController: NavHostController, viewModel: MpazPr
             ) {
                 items(respuestas) { respuesta ->
                     val actividad = viewModel.actividadPorId(respuesta.actividadId)
-                    val elegida = actividad?.alternativas?.getOrNull(respuesta.alternativaElegida)?.texto.orEmpty()
+                    
                     Card(modifier = Modifier.fillMaxWidth()) {
                         Column(modifier = Modifier.padding(16.dp)) {
-                            Text(actividad?.enunciado.orEmpty(), style = MaterialTheme.typography.titleMedium)
-                            Text("Tu respuesta: $elegida", style = MaterialTheme.typography.bodyLarge)
                             Text(
-                                if (respuesta.esCorrecta) "✔ Correcta" else "✘ Incorrecta",
+                                actividad?.enunciado ?: "Actividad no disponible.", 
+                                style = MaterialTheme.typography.titleMedium
+                            )
+                            
+                            val alternativaElegida = actividad?.alternativas?.getOrNull(respuesta.alternativaElegida)?.texto
+                            Text(
+                                "Tu respuesta: ${alternativaElegida ?: "no disponible"}", 
+                                style = MaterialTheme.typography.bodyLarge
+                            )
+                            
+                            // Mostrar respuesta correcta solo si falló
+                            if (!respuesta.esCorrecta) {
+                                val correcta = actividad?.alternativas?.firstOrNull { it.esCorrecta }?.texto
+                                if (correcta != null) {
+                                    Text(
+                                        "Respuesta correcta: $correcta", 
+                                        style = MaterialTheme.typography.bodyLarge
+                                    )
+                                }
+                            }
+                            
+                            val tipo = if (respuesta.numeroIntento == 0) "Desafío" else "Evaluación (intento ${respuesta.numeroIntento})"
+                            val resultado = if (respuesta.esCorrecta) "✔ Correcta" else "✘ Incorrecta"
+                            val colorTexto = if (respuesta.esCorrecta) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.error
+                            
+                            Text(
+                                "$resultado · $tipo",
                                 style = MaterialTheme.typography.titleMedium,
-                                color = if (respuesta.esCorrecta) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.error
+                                color = colorTexto
                             )
                         }
                     }

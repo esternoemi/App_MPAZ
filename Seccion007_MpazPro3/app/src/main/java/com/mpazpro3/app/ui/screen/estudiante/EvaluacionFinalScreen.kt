@@ -49,8 +49,9 @@ fun EvaluacionFinalScreen(navController: NavHostController, viewModel: MpazProVi
     val preguntas = remember(contenidoId) { viewModel.evaluacionFinalDe(contenidoId) }
     val intentos = viewModel.intentosRestantes(estudianteId, contenidoId.orEmpty())
 
-    // Respuestas elegidas: id de la pregunta -> posición de la alternativa
     var respuestas by remember { mutableStateOf(mapOf<String, Int>()) }
+
+    var errorEnvio by remember { mutableStateOf<String?>(null) }
 
     Scaffold(topBar = { BarraSuperior("Evaluación final", navController) }) { padding ->
         Column(
@@ -74,7 +75,10 @@ fun EvaluacionFinalScreen(navController: NavHostController, viewModel: MpazProVi
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 RadioButton(
                                     selected = respuestas[pregunta.id] == posicion,
-                                    onClick = { respuestas = respuestas + (pregunta.id to posicion) }
+                                    onClick = { 
+                                        respuestas = respuestas + (pregunta.id to posicion) 
+                                        errorEnvio = null 
+                                    }
                                 )
                                 Text(alternativa.texto, style = MaterialTheme.typography.bodyLarge)
                             }
@@ -89,10 +93,17 @@ fun EvaluacionFinalScreen(navController: NavHostController, viewModel: MpazProVi
                     .height(56.dp),
                 enabled = respuestas.size == preguntas.size && preguntas.isNotEmpty() && intentos != 0,
                 onClick = {
-                    viewModel.enviarEvaluacion(estudianteId, contenidoId.orEmpty(), respuestas)
-                    navController.navigate(Rutas.ESTUDIANTE_REVISION)
+                    if (viewModel.enviarEvaluacion(estudianteId, contenidoId.orEmpty(), respuestas)) {
+                        navController.navigate(Rutas.ESTUDIANTE_REVISION)
+                    } else {
+                        errorEnvio = "No se pudieron guardar tus respuestas. Revisa tus selecciones e inténtalo otra vez."
+                    }
                 }
             ) { Text("Enviar evaluación", style = MaterialTheme.typography.titleMedium) }
+
+            errorEnvio?.let { mensaje ->
+                Text(mensaje, color = MaterialTheme.colorScheme.error)
+            }
         }
     }
 }
